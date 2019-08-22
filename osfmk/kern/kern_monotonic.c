@@ -199,19 +199,21 @@ mt_fixed_task_counts(task_t task, uint64_t *counts_out)
 	assert(task != TASK_NULL);
 	assert(counts_out != NULL);
 
+	uint64_t counts[MT_CORE_NFIXED];
 	if (!mt_core_supported) {
-		memset(counts_out, 0, sizeof(*counts_out) * MT_CORE_NFIXED);
-		return 1;
+		for (int i = 0; i < MT_CORE_NFIXED; i++) {
+			counts[i] = 0;
+		}
+		return 0;
 	}
 
 	task_lock(task);
 
-	uint64_t counts[MT_CORE_NFIXED] = { 0 };
 	for (int i = 0; i < MT_CORE_NFIXED; i++) {
 		counts[i] = task->task_monotonic.mtk_counts[i];
 	}
 
-	uint64_t thread_counts[MT_CORE_NFIXED] = { 0 };
+	uint64_t thread_counts[MT_CORE_NFIXED] = {};
 	thread_t thread = THREAD_NULL;
 	thread_t curthread = current_thread();
 	bool needs_current = false;
@@ -355,7 +357,9 @@ void
 mt_cur_thread_fixed_counts(uint64_t *counts)
 {
 	if (!mt_core_supported) {
-		memset(counts, 0, sizeof(*counts) * MT_CORE_NFIXED);
+		for (int i = 0; i < MT_CORE_NFIXED; i++) {
+			counts[i] = 0;
+		}
 		return;
 	}
 

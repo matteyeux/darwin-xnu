@@ -7898,7 +7898,6 @@ static int
 key_getsastatbyspi (struct sastat *stat_arg,
 					u_int32_t      max_stat_arg,
 					struct sastat *stat_res,
-					u_int32_t      stat_res_size,
 					u_int32_t     *max_stat_res)
 {
 	int cur, found = 0;
@@ -7908,11 +7907,8 @@ key_getsastatbyspi (struct sastat *stat_arg,
 	    max_stat_res == NULL) {
 		return -1;
 	}
-
-	u_int32_t max_stats = stat_res_size / (sizeof(struct sastat));
-	max_stats = ((max_stat_arg <= max_stats) ? max_stat_arg : max_stats);
 	
-	for (cur = 0; cur < max_stats; cur++) {
+	for (cur = 0; cur < max_stat_arg; cur++) {
 		if (key_getsastatbyspi_one(stat_arg[cur].spi,
 								   &stat_res[found]) == 0) {
 			found++;
@@ -9867,15 +9863,6 @@ key_validate_ext(
 				return EINVAL;
 			break;
 	}
-
-	/* check key bits length */
-	if (ext->sadb_ext_type == SADB_EXT_KEY_AUTH ||
-	    ext->sadb_ext_type == SADB_EXT_KEY_ENCRYPT) {
-		struct sadb_key *key = (struct sadb_key *)(uintptr_t)ext;
-		if (len < (sizeof(struct sadb_key) + _KEYLEN(key))) {
-			return EINVAL;
-		}
-	}
 	
 	return 0;
 }
@@ -10181,7 +10168,6 @@ key_getsastat (struct socket *so,
 	if (key_getsastatbyspi((struct sastat *)(sa_stats_arg + 1),
 						   arg_count,
 						   sa_stats_sav,
-						   bufsize,
 						   &res_count)) {
 		printf("%s: Error finding SAs.\n", __FUNCTION__);
 		error = ENOENT;

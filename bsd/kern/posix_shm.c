@@ -865,7 +865,6 @@ pshm_mmap(__unused proc_t p, struct mmap_args *uap, user_addr_t *retval, struct 
 	vm_map_offset_t	user_start_addr;
 	vm_map_size_t	map_size, mapped_size;
 	int prot = uap->prot;
-	int max_prot = VM_PROT_DEFAULT;
 	int flags = uap->flags;
 	vm_object_offset_t file_pos = (vm_object_offset_t)uap->pos;
 	vm_object_offset_t map_pos;
@@ -888,12 +887,8 @@ pshm_mmap(__unused proc_t p, struct mmap_args *uap, user_addr_t *retval, struct 
 		return(EINVAL);
 
 
-	/* Can't allow write permission if the shm_open() didn't */
-	if (!(fp->f_flag & FWRITE)) {
-		if (prot & VM_PROT_WRITE) {
-			return EPERM;
-		}
-		max_prot &= ~VM_PROT_WRITE;
+	if ((prot & PROT_WRITE) && ((fp->f_flag & FWRITE) == 0)) {
+		return(EPERM);
 	}
 
 	if (((pnode = (struct pshmnode *)fp->f_data)) == PSHMNODE_NULL )
@@ -1005,7 +1000,7 @@ pshm_mmap(__unused proc_t p, struct mmap_args *uap, user_addr_t *retval, struct 
 			file_pos - map_pos,
 			docow,
 			prot,
-			max_prot,
+			VM_PROT_DEFAULT, 
 			VM_INHERIT_SHARE);
 		if (kret != KERN_SUCCESS) 
 			goto out;

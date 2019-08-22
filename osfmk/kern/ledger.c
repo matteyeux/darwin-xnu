@@ -378,7 +378,7 @@ ledger_instantiate(ledger_template_t template, int entry_type)
 
 	ledger->l_template = template;
 	ledger->l_id = ledger_cnt++;
-	os_ref_init(&ledger->l_refs, NULL);
+	ledger->l_refs = 1;
 	ledger->l_size = (int32_t)cnt;
 
 	template_lock(template);
@@ -429,7 +429,7 @@ ledger_reference(ledger_t ledger)
 {
 	if (!LEDGER_VALID(ledger))
 		return (KERN_INVALID_ARGUMENT);
-	os_ref_retain(&ledger->l_refs);
+	OSIncrementAtomic(&ledger->l_refs);
 	return (KERN_SUCCESS);
 }
 
@@ -439,7 +439,7 @@ ledger_reference_count(ledger_t ledger)
 	if (!LEDGER_VALID(ledger))
 		return (-1);
 
-	return os_ref_get_count(&ledger->l_refs);
+	return (ledger->l_refs);
 }
 
 /*
@@ -449,10 +449,16 @@ ledger_reference_count(ledger_t ledger)
 kern_return_t
 ledger_dereference(ledger_t ledger)
 {
+	int v;
+
 	if (!LEDGER_VALID(ledger))
 		return (KERN_INVALID_ARGUMENT);
 
-	if (os_ref_release(&ledger->l_refs) == 0) {
+	v = OSDecrementAtomic(&ledger->l_refs);
+	ASSERT(v >= 1);
+
+	/* Just released the last reference.  Free it. */
+	if (v == 1) {
 		if (ledger->l_template->lt_zone) {
 			zfree(ledger->l_template->lt_zone, ledger);
 		} else {

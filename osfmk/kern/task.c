@@ -655,24 +655,24 @@ task_reference_internal(task_t task)
 	void *       bt[TASK_REF_BTDEPTH];
 	int             numsaved = 0;
 
-	os_ref_retain(&task->ref_count);
-
 	numsaved = OSBacktrace(bt, TASK_REF_BTDEPTH);
+	
+	(void)hw_atomic_add(&(task)->ref_count, 1);
 	btlog_add_entry(task_ref_btlog, task, TASK_REF_OP_INCR,
 					bt, numsaved);
 }
 
-os_ref_count_t
+uint32_t
 task_deallocate_internal(task_t task)
 {
 	void *       bt[TASK_REF_BTDEPTH];
 	int             numsaved = 0;
 
 	numsaved = OSBacktrace(bt, TASK_REF_BTDEPTH);
+
 	btlog_add_entry(task_ref_btlog, task, TASK_REF_OP_DECR,
 					bt, numsaved);
-
-	return os_ref_release(&task->ref_count);
+	return hw_atomic_sub(&(task)->ref_count, 1);
 }
 
 #endif /* TASK_REFERENCE_LEAK_DEBUG */
@@ -1115,8 +1115,6 @@ init_task_ledgers(void)
 	task_ledger_template = t;
 }
 
-os_refgrp_decl(static, task_refgrp, "task", NULL);
-
 kern_return_t
 task_create_internal(
 	task_t		parent_task,
@@ -1138,7 +1136,7 @@ task_create_internal(
 		return(KERN_RESOURCE_SHORTAGE);
 
 	/* one ref for just being alive; one for our caller */
-	os_ref_init_count(&new_task->ref_count, &task_refgrp, 2);
+	new_task->ref_count = 2;
 
 	/* allocate with active entries */
 	assert(task_ledger_template != NULL);
@@ -1532,7 +1530,7 @@ task_deallocate(
 	task_t		task)
 {
 	ledger_amount_t credit, debit, interrupt_wakeups, platform_idle_wakeups;
-	os_ref_count_t refs;
+	uint32_t refs;
 
 	if (task == TASK_NULL)
 	    return;
@@ -1540,23 +1538,30 @@ task_deallocate(
 	refs = task_deallocate_internal(task);
 
 #if IMPORTANCE_INHERITANCE
+	if (refs > 1)
+		return;
+
+	atomic_load_explicit(&task->ref_count, memory_order_acquire);
+	
 	if (refs == 1) {
 		/*
 		 * If last ref potentially comes from the task's importance,
 		 * disconnect it.  But more task refs may be added before
 		 * that completes, so wait for the reference to go to zero
-		 * naturally (it may happen on a recursive task_deallocate()
+		 * naturually (it may happen on a recursive task_deallocate()
 		 * from the ipc_importance_disconnect_task() call).
 		 */
 		if (IIT_NULL != task->task_imp_base)
 			ipc_importance_disconnect_task(task);
 		return;
 	}
-#endif /* IMPORTANCE_INHERITANCE */
-
-	if (refs > 0) {
+#else
+	if (refs > 0)
 		return;
-	}
+
+	atomic_load_explicit(&task->ref_count, memory_order_acquire);
+
+#endif /* IMPORTANCE_INHERITANCE */
 
 	lck_mtx_lock(&tasks_threads_lock);
 	queue_remove(&terminated_tasks, task, task_t, tasks);
@@ -3648,13 +3653,22 @@ host_security_set_task_token(
 
 kern_return_t
 task_send_trace_memory(
-	__unused task_t   target_task,
+	task_t        target_task,
 	__unused uint32_t pid,
 	__unused uint64_t uniqueid)
 {
-	return KERN_INVALID_ARGUMENT;
-}
+	kern_return_t kr = KERN_INVALID_ARGUMENT;
+	if (target_task == TASK_NULL)
+		return (KERN_INVALID_ARGUMENT);
 
+#if CONFIG_ATM
+	kr = atm_send_proc_inspect_notification(target_task,
+				  pid,
+				  uniqueid);
+
+#endif
+	return (kr);
+}
 /*
  * This routine was added, pretty much exclusively, for registering the
  * RPC glue vector for in-kernel short circuited tasks.  Rather than
@@ -6003,18 +6017,15 @@ task_set_mach_voucher(
 
 kern_return_t
 task_swap_mach_voucher(
-	__unused task_t         task,
-	__unused ipc_voucher_t  new_voucher,
-	ipc_voucher_t          *in_out_old_voucher)
+	task_t			task,
+	ipc_voucher_t		new_voucher,
+	ipc_voucher_t		*in_out_old_voucher)
 {
-	/*
-	 * Currently this function is only called from a MIG generated
-	 * routine which doesn't release the reference on the voucher
-	 * addressed by in_out_old_voucher. To avoid leaking this reference,
-	 * a call to release it has been added here.
-	 */
-	ipc_voucher_release(*in_out_old_voucher);
-	return KERN_NOT_SUPPORTED;
+	if (TASK_NULL == task)
+		return KERN_INVALID_TASK;
+
+	*in_out_old_voucher = new_voucher;
+	return KERN_SUCCESS;
 }
 
 void task_set_gpu_denied(task_t task, boolean_t denied)
@@ -6191,7 +6202,7 @@ task_inspect(task_inspect_t task_insp, task_inspect_flavor_t flavor,
 	switch (flavor) {
 	case TASK_INSPECT_BASIC_COUNTS: {
 		struct task_inspect_basic_counts *bc;
-		uint64_t task_counts[MT_CORE_NFIXED] = { 0 };
+		uint64_t task_counts[MT_CORE_NFIXED];
 
 		if (size < TASK_INSPECT_BASIC_COUNTS_COUNT) {
 			kr = KERN_INVALID_ARGUMENT;

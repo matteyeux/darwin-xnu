@@ -128,7 +128,6 @@
 
 #include <kern/waitq.h>
 #include <san/kasan.h>
-#include <os/refcnt.h>
 
 #include <ipc/ipc_kmsg.h>
 
@@ -288,7 +287,7 @@ struct thread {
 
 	int16_t				promotions;			/* level of promotion */
 	int				iotier_override; /* atomic operations to set, cleared on ret to user */
-	struct os_refcnt	ref_count;		/* number of references to me */
+	_Atomic uint32_t		ref_count;		/* number of references to me */
 
 	lck_mtx_t*                      waiting_for_mutex;      /* points to mutex we're waiting for until we acquire it */
 
@@ -647,7 +646,7 @@ extern void			thread_init(void);
 extern void			thread_daemon_init(void);
 
 #define	thread_reference_internal(thread)	\
-			os_ref_retain(&(thread)->ref_count);
+			(void)atomic_fetch_add_explicit(&(thread)->ref_count, 1, memory_order_relaxed)
 
 #define thread_reference(thread)					\
 MACRO_BEGIN											\

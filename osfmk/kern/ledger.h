@@ -34,10 +34,6 @@
 
 #include <mach/mach_types.h>	/* ledger_t */
 
-#ifdef MACH_KERNEL_PRIVATE
-#include <os/refcnt.h>
-#endif /* MACH_KERNEL_PRIVATE */
-
 #define	LEDGER_INFO		0
 #define	LEDGER_ENTRY_INFO	1
 #define	LEDGER_TEMPLATE_INFO	2
@@ -96,7 +92,7 @@ struct ledger_entry {
 
 struct ledger {
 	uint64_t                l_id;
-	struct os_refcnt        l_refs;
+	int32_t                 l_refs;
 	int32_t                 l_size;
 	struct ledger_template *l_template;
 	struct ledger_entry     l_entries[0] __attribute__((aligned(8)));

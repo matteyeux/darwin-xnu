@@ -4375,7 +4375,7 @@ linkat_internal(vfs_context_t ctx, int fd1, user_addr_t path, int fd2,
 #if CONFIG_FSE
 	fse_info finfo;
 #endif
-	int need_event, has_listeners, need_kpath2;
+	int need_event, has_listeners;
 	char *target_path = NULL;
 	int truncated=0;
 
@@ -4471,14 +4471,7 @@ linkat_internal(vfs_context_t ctx, int fd1, user_addr_t path, int fd2,
 #endif
 	has_listeners = kauth_authorize_fileop_has_listeners();
 
-	need_kpath2 = 0;
-#if CONFIG_AUDIT
-	if (AUDIT_RECORD_EXISTS()) {
-		need_kpath2 = 1;
-	}
-#endif
-
-	if (need_event || has_listeners || need_kpath2) {
+	if (need_event || has_listeners) {
 		char *link_to_path = NULL;
 		int len, link_name_len;
 
@@ -4490,8 +4483,6 @@ linkat_internal(vfs_context_t ctx, int fd1, user_addr_t path, int fd2,
 		}
 
 		len = safe_getpath(dvp, nd.ni_cnd.cn_nameptr, target_path, MAXPATHLEN, &truncated);
-
-		AUDIT_ARG(kpath, target_path, ARG_KPATH2);
 
 		if (has_listeners) {
 		        /* build the path to file we are linking to */
@@ -7326,8 +7317,6 @@ renameat_internal(vfs_context_t ctx, int fromfd, user_addr_t from,
 	int retry_count;
 	int mntrename;
 	int need_event;
-	int need_kpath2;
-	int has_listeners;
 	const char *oname = NULL;
 	char *from_name = NULL, *to_name = NULL;
 	int from_len=0, to_len=0;
@@ -7450,16 +7439,7 @@ continue_lookup:
 	need_event = 0;
 #endif /* CONFIG_FSE */
 
-	has_listeners = kauth_authorize_fileop_has_listeners();
-
-	need_kpath2 = 0;
-#if CONFIG_AUDIT
-	if (AUDIT_RECORD_EXISTS()) {
-		need_kpath2 = 1;
-	}
-#endif
-
-	if (need_event || has_listeners) {
+	if (need_event || kauth_authorize_fileop_has_listeners()) {
 		if (from_name == NULL) {
 			GET_PATH(from_name);
 			if (from_name == NULL) {
@@ -7469,9 +7449,7 @@ continue_lookup:
 		}
 
 		from_len = safe_getpath(fdvp, fromnd->ni_cnd.cn_nameptr, from_name, MAXPATHLEN, &from_truncated);
-	}
 
-	if (need_event || need_kpath2 || has_listeners) {
 		if (to_name == NULL) {
 			GET_PATH(to_name);
 			if (to_name == NULL) {
@@ -7481,9 +7459,6 @@ continue_lookup:
 		}
 
 		to_len = safe_getpath(tdvp, tond->ni_cnd.cn_nameptr, to_name, MAXPATHLEN, &to_truncated);
-		if (to_name && need_kpath2) {
-			AUDIT_ARG(kpath, to_name, ARG_KPATH2);
-		}
 	}
 	if (!fvp) {
 		/*
