@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Apple Inc. All rights reserved.
+ * Copyright (c) 2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -33,21 +33,49 @@
 #include <security/mac_internal.h>
 
 int
-mac_skywalk_flow_check_connect(__unused proc_t proc, void *flow, const struct sockaddr *addr, int type, int protocol)
+mac_necp_check_open(proc_t proc, int flags)
 {
+	kauth_cred_t cred;
 	int error;
 
-	assert(proc == current_proc());
-	MAC_CHECK(skywalk_flow_check_connect, kauth_cred_get(), flow, addr, type, protocol);
+#if SECURITY_MAC_CHECK_ENFORCE
+	/* 21167099 - only check if we allow write */
+	if (!mac_proc_enforce) {
+		return 0;
+	}
+#endif
+
+	if (!mac_proc_check_enforce(proc)) {
+		return 0;
+	}
+
+	cred = kauth_cred_proc_ref(proc);
+	MAC_CHECK(necp_check_open, cred, flags);
+	kauth_cred_unref(&cred);
+
 	return error;
 }
 
 int
-mac_skywalk_flow_check_listen(__unused proc_t proc, void *flow, const struct sockaddr *addr, int type, int protocol)
+mac_necp_check_client_action(proc_t proc, struct fileglob *fg, uint32_t action)
 {
+	kauth_cred_t cred;
 	int error;
 
-	assert(proc == current_proc());
-	MAC_CHECK(skywalk_flow_check_listen, kauth_cred_get(), flow, addr, type, protocol);
+#if SECURITY_MAC_CHECK_ENFORCE
+	/* 21167099 - only check if we allow write */
+	if (!mac_proc_enforce) {
+		return 0;
+	}
+#endif
+
+	if (!mac_proc_check_enforce(proc)) {
+		return 0;
+	}
+
+	cred = kauth_cred_proc_ref(proc);
+	MAC_CHECK(necp_check_client_action, cred, fg, action);
+	kauth_cred_unref(&cred);
+
 	return error;
 }
